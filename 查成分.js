@@ -16,6 +16,7 @@ import lodash from 'lodash'
 import common from '../../lib/common/common.js'
 
 var cookie = "" //理论上SESSDATA即可 现在通过命令设置
+var ac_time_value = ""
 //在这里填写你的自动刷新列表设置↓↓↓↓↓
 let rule =`0 0 0 * * ?`  //更新的秒，分，时，日，月，星期几；日月/星期几为互斥条件，必须有一组为*
 let auto_refresh = 1  //是否自动更新列表，1开0关
@@ -129,6 +130,10 @@ let refresh_task = schedule.scheduleJob(rule, async (e) => {  //定时更新
 })
 
 
+const login_check_url = "https://passport.bilibili.com/x/passport-login/web/cookie/info"; //检测是否需要更新cookie
+const refresh_csrf_url = "https://www.bilibili.com/correspond/1/";
+const refresh_cookie_url = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
+const refresh_confirm_url = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh";
 const attention_url = "https://api.bilibili.com/x/relation/followings?vmid=" //B站基本信息接口 含关注表
 const archive_url = "http://api.bilibili.com/x/web-interface/card?mid=";
 const medal_url = "https://api.live.bilibili.com/xlive/web-ucenter/user/MedalWall?target_id=" //粉丝牌查询接口
@@ -136,6 +141,7 @@ const search_url = `https://api.bilibili.com/x/web-interface/wbi/search/type?sea
 const dirpath = "data/cha_chengfen" //本地V列表文件夹
 var filename = `vtuber_list.json` //本地V列表文件名
 var cookie_filename = `bilibili_cookies.txt`; //b站cookie
+var ac_time_value_filename = `ac_time_value.txt`; //b站ac_time_value
 if (!fs.existsSync(dirpath)) {//如果文件夹不存在
 	fs.mkdirSync(dirpath);//创建文件夹
 }
@@ -145,6 +151,10 @@ if (!fs.existsSync(dirpath + "/" + filename)) {
 }
 if (!fs.existsSync(dirpath + "/" + cookie_filename)) {
     fs.writeFileSync(dirpath + "/" + cookie_filename, JSON.stringify({
+    }))
+}
+if (!fs.existsSync(dirpath + "/" + ac_time_value_filename)) {
+    fs.writeFileSync(dirpath + "/" + ac_time_value_filename, JSON.stringify({
     }))
 }
 // 读取文件内容并存储到变量 cookie 中
@@ -159,9 +169,26 @@ fs.readFile(dirpath + "/" + cookie_filename, 'utf8', async function(err, data) {
         await Bot.pickUser(masterId).sendMsg('您尚未设置cookie，请使用 #查成分保存ck 来保存');
         console.log('文件为空');
     } else {
-        const cookie = data;
+        cookie = data;
         await Bot.pickUser(masterId).sendMsg('查成分 Cookie已设置');
         console.log('读取到的 Cookie:', cookie);
+    }
+});
+// 读取文件内容并存储到变量 ac_time_value 中
+fs.readFile(dirpath + "/" + ac_time_value_filename, 'utf8', async function(err, data) {
+    if (err) {
+        await Bot.pickUser(masterId).sendMsg('ac_time_value 文件读取错误');
+        console.error(err);
+        return;
+    }
+
+    if (data === '') {
+        await Bot.pickUser(masterId).sendMsg('您尚未设置ac_time_value，请使用 #查成分保存ac 来保存');
+        console.log('文件为空');
+    } else {
+        ac_time_value = data;
+        await Bot.pickUser(masterId).sendMsg('查成分 ac_time_value已设置');
+        console.log('读取到的 ac_time_value:', cookie);
     }
 });
 
@@ -187,6 +214,18 @@ export class example extends plugin {
                 {
                   reg: "^#?查?成分查看(ck|cookie|cookies)$",
                   fnc: 'show_cookies'
+                },
+                {
+                  reg: "^#?查?成分(检查|更新|刷新)(ck|cookie|cookies)$",
+                  fnc: 'check_cookie'
+                },
+                {
+                  reg: "^#?查?成分(保存|记录|设置)(ac|ac_time_value).*$",
+                  fnc: 'write_ac_time_value'
+                },
+                {
+                  reg: "^#?查?成分查看(ac|ac_time_value)$",
+                  fnc: 'show_ac_time_value'
                 },
                 {
                   reg: "^#?查?成分.*$",
@@ -258,6 +297,129 @@ export class example extends plugin {
             await this.reply(forwardMsg)
         }
         return
+    }
+    
+    async check_cookie(e) {
+        async function check_cookie() {
+            let response = await fetch(login_check_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+            if (response.status>=400&&response.status<500) {
+                await e.reply("检查cookie状态失败")
+                return false;
+            }
+            let cookie_status = await response.json();
+            if(cookie_status.code === 0) {
+                e.reply('cookie状态正常，无需刷新');
+                return true;
+            } else {
+                e.reply('cookie失效，将重新获取cookie');
+                return false;
+            }
+        }
+        
+        async function createCorrespondPath() {
+            const publicKey = await crypto.subtle.importKey(
+              "jwk",
+              {
+                kty: "RSA",
+                n: "y4HdjgJHBlbaBN04VERG4qNBIFHP6a3GozCl75AihQloSWCXC5HDNgyinEnhaQ_4-gaMud_GF50elYXLlCToR9se9Z8z433U3KjM-3Yx7ptKkmQNAMggQwAVKgq3zYAoidNEWuxpkY_mAitTSRLnsJW-NCTa0bqBFF6Wm1MxgfE",
+                e: "AQAB",
+              },
+              { name: "RSA-OAEP", hash: "SHA-256" },
+              true,
+              ["encrypt"],
+            )
+            
+            async function getCorrespondPath(timestamp) {
+              const data = new TextEncoder().encode(`refresh_${timestamp}`);
+              const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, data))
+              return encrypted.reduce((str, c) => str + c.toString(16).padStart(2, "0"), "")
+            }
+            
+            const ts = Date.now()
+            return await getCorrespondPath(ts)
+        }
+        
+        async function refresh_cookie(refresh_csrf) {
+            async function getCookieValue(cookieString, key) {
+              return cookieString
+                .split('; ')
+                .reduce((result, item) => {
+                  const [k, v] = item.split('=');
+                  return k === key ? v : result;
+                }, '');
+            }
+            
+            async function refresh_confirm(csrf, refresh_token) {
+                const data = {
+                    csrf: csrf,
+                    refresh_token: refresh_token
+                }
+                let response = await fetch(refresh_cookie, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+                let confirm_result = response.json();
+                if (confirm_result.code === 0) {
+                    return true;
+                } else {
+                    this.reply(`刷新确认异常，错误码${confirm_result.code}，错误报${confirm_result.message}，参考错误码解释：\n-101：账号未登录\n-111：csrf 校验失败\n-400：请求错误`);
+                    return false;
+                }
+            }
+            let biliJct = await getCookieValue(cookie, 'bili_jct');
+            
+            const data = new URLSearchParams({
+              csrf: biliJct,
+              refresh_csrf: refresh_csrf,
+              source: 'main_web',
+              refresh_token: ac_time_value
+            });
+            let response = await fetch(refresh_cookie, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+            let refresh_result = response.json();
+            if (refresh_result.code === 0) {
+                const last_ac_time_value = ac_time_value;
+                ac_time_value = refresh_result.data.refresh_token;
+                e.write_ac_time_value({ "msg": refresh_token });
+                const setCookieHeaders = response.headers.getAll('set-cookie') || [];
+                // 解析并提取 SESSDATA 和 bili_jct 的值
+                cookie = "";
+                setCookieHeaders.forEach(cookieString => {
+                    // 提取键值对（示例使用正则表达式）
+                    const match = cookieString.match(/^(.*?);/); // 提取键值对部分（忽略其他参数）
+                    if (match) {
+                        const [pair] = match;
+                        const [key, value] = pair.split('=');
+                        cookie += `"${key}": "${value}"`;
+                    }
+                });
+                e.write_cookies({ "msg": cookie });
+                biliJct = await getCookieValue(cookie, 'bili_jct');
+                if(await refresh_confirm(biliJct, last_ac_time_value)) {
+                    e.reply("Cookie 刷新成功");
+                    return true;
+                } else {
+                    e.reply("Cookie 刷新确认失败");
+                    return false;
+                }
+            } else {
+                e.reply('刷新cookie失败');
+                return false;
+            }
+        }
+        
+        if (await check_cookie()) {
+            return true;
+        }
+        
+        const full_refresh_csrf_url = refresh_csrf_url + await createCorrespondPath();
+        let response = await fetch(full_refresh_csrf_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+        let refresh_result = await response.text();
+        const regex = /<div\s+id=["']1-name["']>(.*?)<\/div>/is; // i 表示不区分大小写，s 表示点匹配换行
+        const match = htmlString.match(regex);
+        let refresh_csrf;
+        if (match) {
+          refresh_csrf = match[1]; // 提取第一个捕获组的内容
+        }
+        
+        await refresh_cookie(refresh_csrf);
+        return true;
     }
     
     async name2uid(name) {
@@ -438,6 +600,38 @@ export class example extends plugin {
             } else {
                 await e.reply('读取到的 Cookie:' + data);
                 console.log('读取到的 Cookie:', data);
+            }
+        });
+    }
+    
+    async write_ac_time_value(e) {
+        ac_time_value = e.msg.replace(/#| |查?成分|保存|记录|设置|ac|ac_time_value/g, "");
+        fs.writeFile(dirpath + "/" + ac_time_value_filename, ac_time_value, 'utf8', async function(err) {
+            if (err) {
+                console.error(err);
+                await e.reply('ac_time_value 保存失败');
+                return;
+            }
+            console.log('ac_time_value 已成功保存到文件:', ac_time_value_filename);
+            await e.reply('ac_time_value 已保存：' + ac_time_value);
+        });
+    }
+    
+    async show_ac_time_value(e) {
+        // 读取文件内容并存储到变量 ac_time_value 中
+        fs.readFile(dirpath + "/" + ac_time_value_filename, 'utf8', async function(err, data) {
+            if (err) {
+                await e.reply('ac_time_value 文件读取错误');
+                console.error(err);
+                return;
+            }
+    
+            if (data === '') {
+                await e.reply('您尚未设置ac_time_value，请使用 #查成分保存ac 来保存');
+                console.log('文件为空');
+            } else {
+                await e.reply('读取到的 ac_time_value:' + data);
+                console.log('读取到的 ac_time_value:', data);
             }
         });
     }
