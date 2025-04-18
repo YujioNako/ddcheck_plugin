@@ -129,7 +129,8 @@ let refresh_task = schedule.scheduleJob(rule, async (e) => {  //定时更新
 })
 
 
-const attention_url = "https://account.bilibili.com/api/member/getCardByMid?mid=" //B站基本信息接口 含关注表
+const attention_url = "https://api.bilibili.com/x/relation/followings?vmid=" //B站基本信息接口 含关注表
+const archive_url = "http://api.bilibili.com/x/web-interface/card?mid=";
 const medal_url = "https://api.live.bilibili.com/xlive/web-ucenter/user/MedalWall?target_id=" //粉丝牌查询接口
 const search_url = `https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=bili_user&keyword=` //昵称转uid
 const dirpath = "data/cha_chengfen" //本地V列表文件夹
@@ -218,25 +219,26 @@ export class example extends plugin {
             }
         }
         const vtb_list = JSON.parse(fs.readFileSync(dirpath + "/" + filename, "utf8"));//读取文件
-        const attention_list = await this.get_attention_list(mid)
-        if(attention_list.card.attention!=0 && JSON.stringify(attention_list.card.attentions)=="[]"){
+        const attention_list = await this.get_attention_list(mid);
+        if(attention_list[0]!==0 && JSON.stringify(attention_list[1])=="[]"){
             this.reply(`对方可能隐藏了关注列表`)
             return
         }
-        const medal_list = await this.get_medal_list(mid)
-        await base_info.push(segment.image((attention_list.card.face)))
-        await base_info.push(`${JSON.stringify(attention_list.card.name).replaceAll(`\"`, ``)} (uid: ${mid})  Lv${JSON.stringify(attention_list.card.level_info.current_level)}\n粉丝：${attention_list.card.fans}\n关注：${Object.keys(attention_list.card.attentions).length}\n`)
-        if(attention_list.card.official_verify.type!=-1)
-            await base_info.push(`bilibili认证：${JSON.stringify(attention_list.card.official_verify.desc).replaceAll(`\"`, ``)}`)
+        const medal_list = await this.get_medal_list(mid);
+        const archive = await this.get_archive(mid);
+        await base_info.push(segment.image((archive.data.card.face)))
+        await base_info.push(`${JSON.stringify(archive.data.card.name).replaceAll(`\"`, ``)} (uid: ${mid})  Lv${JSON.stringify(archive.data.card.level_info.current_level)}\n粉丝：${archive.data.card.fans}\n关注：${Object.keys(attention_list[1]).length}\n`)
+        if(archive.data.card.official_verify.type!=-1)
+            await base_info.push(`bilibili认证：${JSON.stringify(archive.data.card.official_verify.desc).replaceAll(`\"`, ``)}`)
         
         var v_num = 0;
         var split_index = 0;
         message[split_index] = [];
-        for(var i = 0;i<Object.keys(attention_list.card.attentions).length;i++){
-            if(vtb_list.hasOwnProperty(attention_list.card.attentions[i])) {//如果json中存在该用户
-                let uid = attention_list.card.attentions[i];
+        for(var i = 0;i<Object.keys(attention_list[1]).length;i++){
+            if(vtb_list.hasOwnProperty(attention_list[1][i].mid)) {//如果json中存在该用户
+                let uid = attention_list[1][i].mid;
                 message[split_index].push(`${JSON.stringify(vtb_list[uid].uname).replaceAll("\"","")} - ${uid}\n`)
-                if(medal_list.hasOwnProperty(attention_list.card.attentions[i])){
+                if(medal_list.hasOwnProperty(attention_list[1][i].mid)){
                     message[split_index].push(`└${JSON.stringify(medal_list[uid].medal_name).replaceAll("\"","")}|${medal_list[uid].level}\n`)
                 }
                 v_num++;
@@ -345,28 +347,56 @@ export class example extends plugin {
     }
     
     async get_attention_list(mid) {
-        var response = await fetch(attention_url+mid, { "method": "GET" });
+        let page = 1;
+        let resJson;
+        var attention_list = [];
+        var response;
+        while (true){
+            response = await fetch(attention_url+`${mid}&pn=${page}`, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+            if (response.status>=400&&response.status<500) {
+                await this.reply("404，可能是uid不存在")
+                return [0,[]];
+            }
+            resJson = await response.json();
+            // await this.reply(attention_url+`${mid}&pn=${page}`+JSON.stringify(resJson));
+            if(resJson.code!==0){
+                await this.reply(`获取目标关注列表失败，可能是查无此人或者风控：${resJson.message}`)
+                return [0,[]];
+            } else if (resJson.data.list&&JSON.stringify(resJson.data.list) == '[]') {
+                break;
+            } else {
+                attention_list = [...attention_list, ...resJson.data.list];
+                page++;
+            } 
+        }
+        return [resJson.total,attention_list];
+    }
+    
+    async get_archive(mid) {
+        let resJson;
+        var response = await fetch(archive_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET" });
         if (response.status>=400&&response.status<500) {
             await this.reply("404，可能是uid不存在")
-            return false
+            return false;
         }
-        var attention_list = await response.json()
-        if(attention_list.code!=0){
-            await this.reply(`获取目标关注列表失败，可能是查无此人：${attention_list.message}`)
-            return false
-        }
-        return attention_list
+        resJson = await response.json();
+        if(resJson.code!==0){
+            await this.reply(`获取目标基本信息失败，可能是查无此人：${resJson.message}`)
+            return false;
+        } else {
+            return resJson;
+        } 
     }
     
     async get_medal_list(mid) {
-        var response = await fetch(medal_url+mid, { "headers": {"cookie": cookie},"method": "GET" });
+        var response = await fetch(medal_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET" });
         if (response.status==404) {
             await this.reply("404，可能是uid不存在")
             return false
         }
         var medal_list_raw = await response.json()
-        var medal_list = {}
-        if(medal_list_raw.code!=0){
+        var medal_list = {};
+        if(medal_list_raw.code!==0){
             await this.reply(`获取粉丝牌数据错误：${JSON.stringify(medal_list_raw.message)}，一般是cookie中的SESSDATA过期导致`)
             return medal_list
         }
@@ -388,7 +418,7 @@ export class example extends plugin {
                 await e.reply('Cookie 保存失败');
                 return;
             }
-            console.log('Cookie 已成功保存到文件:', filepath);
+            console.log('Cookie 已成功保存到文件:', cookie_filename);
             await e.reply('Cookie 已保存：' + cookie);
         });
     }
