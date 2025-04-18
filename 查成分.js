@@ -181,7 +181,7 @@ export class example extends plugin {
                   fnc: 'get_v_list'
                 },
                 {
-                  reg: "^#?查?成分(保存|记录)(ck|cookie|cookies).*$",
+                  reg: "^#?查?成分(保存|记录|设置)(ck|cookie|cookies).*$",
                   fnc: 'write_cookies'
                 },
                 {
@@ -411,7 +411,7 @@ export class example extends plugin {
     }
     
     async write_cookies(e) {
-        cookie = e.msg.replace(/#| |查?成分|保存|记录|ck|cookie|cookies/g, "");
+        cookie = e.msg.replace(/#| |查?成分|保存|记录|设置|ck|cookie|cookies/g, "");
         fs.writeFile(dirpath + "/" + cookie_filename, cookie, 'utf8', async function(err) {
             if (err) {
                 console.error(err);
