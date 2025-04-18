@@ -40,16 +40,28 @@ VTB列表数据来源：[vtbs.moe](https://vtbs.moe/)
 初次部署时，请注意控制台载入信息是否正常，若出现类似“XXX is not defined”的报错，请确认是否安装好对应的依赖
 
 ### 配置
-请使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则在无法查询对象的粉丝牌情况或使用昵称转uid功能（但依然可以通过uid直接获取查询对象的关注列表）
+请使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则该插件无法使用；进一步的，您可以使用`#查成分记录ac 您的ac_time_value`来配置或更新您的b站账号的ac_time_value，这样做可以让插件得以自动化更新cookie
 
 > `cookie` 获取方式：<br>
-> 登录bilibili后，`F12` 打开开发工具，查看 `www.bilibili.com` 的请求头下的`cookie`内，形如`buvid4=XXXX;SESSDATA=XXXX;`的字段，即为您的b站cookie <br>
+> 登录bilibili后，`F12` 打开开发工具，查看 `www.bilibili.com` 的请求头下的`cookie`内，形如`SESSDATA=XXXX;bili_jct=XXXX;`的字段，即为您的b站cookie <br>
 
-理论上，使用粉丝牌查询只需要`SESSDATA`，使用昵称转uid同时需要`buvid4`以及`SESSDATA`；如果您不是很了解cookie的结构、用法、用途，请直接将cookie字段下的所有内容贴入
+理论上，使用粉丝牌查询只需要`SESSDATA`，使用昵称转uid同时需要`bili_jct`以及`SESSDATA`；如果您不是很了解cookie的结构、用法、用途，请直接将cookie字段下的所有内容贴入
 
-`SESSDATA`与`buvid4`可能需要经常更新，当cookie失效后，查成分时会出现提示
+`SESSDATA`与`bili_jct`可能需要经常更新，当cookie失效后，查成分时会出现提示；若您还设置了ac_time_value，您可尝试使用`#查成分更新ck`来自动化更新cookie
 
-<b><h3>注意：不要将包含`SESSDATA`或`buvid4`在内的cookie透露给任何人，这些字段包含了您的Bilibili登录令牌，其泄露可能给您的账号带来风险</h3></b>
+<b><h3>注意：不要将包含`SESSDATA`或`bili_jct`在内的cookie透露给任何人，这些字段包含了您的Bilibili登录令牌，其泄露可能给您的账号带来风险</h3></b>
+
+> `ac_time_value`获取方式：<br>
+> 在控制台中输入下面的JavaScript：
+```
+const acTimeValue = localStorage.getItem('ac_time_value');
+
+if (acTimeValue !== null) {
+  console.log('ac_time_value 的值是:', acTimeValue);
+} else {
+  console.log('未找到名为 "ac_time_value" 的存储项');
+}
+```
 
 您还可以根据需要在js内配置是否开启自动更新列表，自动更新的时间，是否切割发送等设置，具体调整方式请参考js内注释
 
