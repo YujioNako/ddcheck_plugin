@@ -14,13 +14,15 @@ import fs from 'fs'
 import cfg from '../../lib/config/config.js'
 import lodash from 'lodash'
 import common from '../../lib/common/common.js'
+import crypto from "crypto"
+import QRCode from "qrcode"
 
 var cookie = "" //理论上SESSDATA即可 现在通过命令设置
 var ac_time_value = ""
 //在这里填写你的自动刷新列表设置↓↓↓↓↓
 let rule =`0 58 23 * * ?`  //更新的秒，分，时，日，月，星期几；日月/星期几为互斥条件，必须有一组为*
-let auto_refresh = 1  //是否自动更新列表，1开0关
-let auto_check_cookie = 1  //是否自动检查cookie，1开0关
+let auto_refresh = true  //是否自动更新列表
+let auto_check_cookie = true  //是否自动检查cookie
 let divisor = 100  //切割发送阈值，0则不切割
 let masterId = cfg.masterQQ[0]  //管理者QQ账号
 let announce_limit = 10;  //新增或更新时，数量超过该值则不回报详情
@@ -40,7 +42,9 @@ const login_check_url = "https://passport.bilibili.com/x/passport-login/web/cook
 const refresh_csrf_url = "https://www.bilibili.com/correspond/1/"; //获取csrf
 const refresh_cookie_url = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh"; //用csrf生成新cookie
 const refresh_confirm_url = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh"; //废弃旧cookie
-const attention_url = "https://api.bilibili.com/x/relation/followings?vmid=" //B站用户关注表
+const generate_qr_url= "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"; //申请二维码
+const check_qr_url= "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key="; //检查二维码扫描情况
+const attention_url = "https://line3-h5-mobile-api.biligame.com/game/center/h5/user/relationship/following_list?vmid=" //B站用户关注表
 const archive_url = "http://api.bilibili.com/x/web-interface/card?mid="; //b站用户基本信息
 const medal_url = "https://api.live.bilibili.com/xlive/web-ucenter/user/MedalWall?target_id=" //粉丝牌查询接口
 const search_url = `https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=bili_user&keyword=` //昵称转uid
@@ -136,7 +140,7 @@ async function ping(url, timeout = ping_timeout) {
 
 async function check_refresh_cookie() {
     async function check_cookie() {
-        let response = await fetch(login_check_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+        let response = await fetch(login_check_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
         if (response.status>=400&&response.status<500) {
             await Bot.pickUser(masterId).sendMsg("检查Cookie状态失败")
             return false;
@@ -189,7 +193,7 @@ async function check_refresh_cookie() {
                 csrf: csrf,
                 refresh_token: refresh_token
             }
-            let response = await fetch(refresh_confirm_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+            let response = await fetch(refresh_confirm_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
             let confirm_result = response.json();
             if (confirm_result.code === 0) {
                 return true;
@@ -206,12 +210,26 @@ async function check_refresh_cookie() {
           source: 'main_web',
           refresh_token: ac_time_value
         });
-        let response = await fetch(refresh_cookie_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+        let response = await fetch(refresh_cookie_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
         let refresh_result = response.json();
         if (refresh_result.code === 0) {
             const last_ac_time_value = ac_time_value;
             ac_time_value = refresh_result.data.refresh_token;
-            e.write_ac_time_value({ "msg": refresh_token });
+                
+            async function write_ac_time_value(ac_time_value) {
+                fs.writeFile(dirpath + "/" + ac_time_value_filename, ac_time_value, 'utf8', async function(err) {
+                    if (err) {
+                        console.error(err);
+                        await e.reply('ac_time_value 保存失败');
+                        return;
+                    }
+                    console.log('ac_time_value 已成功保存到文件:', ac_time_value_filename);
+                    await e.reply('ac_time_value 已保存：' + ac_time_value);
+                });
+            }
+            
+            await write_ac_time_value(ac_time_value);
+                
             const setCookieHeaders = response.headers.getAll('set-cookie') || [];
             // 解析并提取 SESSDATA 和 bili_jct 的值
             cookie = "";
@@ -221,10 +239,23 @@ async function check_refresh_cookie() {
                 if (match) {
                     const [pair] = match;
                     const [key, value] = pair.split('=');
-                    cookie += `"${key}": "${value}"`;
+                    cookie += `${key}=${value} `;
                 }
             });
-            e.write_cookies({ "msg": cookie });
+                
+            async function write_cookies(cookie) {
+                fs.writeFile(dirpath + "/" + cookie_filename, cookie, 'utf8', async function(err) {
+                    if (err) {
+                        console.error(err);
+                        await e.reply('Cookie 保存失败');
+                        return;
+                    }
+                    console.log('Cookie 已成功保存到文件:', cookie_filename);
+                    await e.reply('Cookie 已保存：' + cookie);
+                });
+            }
+
+            await write_cookies(cookie);
             biliJct = await getCookieValue(cookie, 'bili_jct');
             if(await refresh_confirm(biliJct, last_ac_time_value)) {
                 Bot.pickUser(masterId).sendMsg("Cookie刷新成功");
@@ -244,7 +275,7 @@ async function check_refresh_cookie() {
     }
     
     const full_refresh_csrf_url = refresh_csrf_url + await createCorrespondPath();
-    let response = await fetch(full_refresh_csrf_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+    let response = await fetch(full_refresh_csrf_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
     let refresh_result = await response.text();
     const regex = /<div\s+id=["']1-name["']>(.*?)<\/div>/is; // i 表示不区分大小写，s 表示点匹配换行
     const match = htmlString.match(regex);
@@ -258,7 +289,7 @@ async function check_refresh_cookie() {
 }
 
 let refresh_task = schedule.scheduleJob(rule, async (e) => {  //定时更新
-    if(auto_refresh==1){
+    if(auto_refresh){
         const res = await fetch(api_cdn, { "method": "GET" })
         let urls = await res.json();
         urls = await sortUrlsByPing(urls);
@@ -313,7 +344,7 @@ let refresh_task = schedule.scheduleJob(rule, async (e) => {  //定时更新
         }
         await Bot.pickUser(masterId).sendMsg(`成分姬 V列表自动更新已完成`)
     }
-    if(auto_check_cookie==1){
+    if(auto_check_cookie){
         check_refresh_cookie();
     }
 })
@@ -353,6 +384,10 @@ export class example extends plugin {
                 {
                   reg: "^#?查?成分查看(ac|ac_time_value)$",
                   fnc: 'show_ac_time_value'
+                },
+                {
+                  reg: "^#?查?成分(扫码)?登(陆|录)$",
+                  fnc: 'scan_login'
                 },
                 {
                   reg: "^#?查?成分.*$",
@@ -431,7 +466,7 @@ export class example extends plugin {
     
     async check_refresh_cookie(e) {
         async function check_cookie() {
-            let response = await fetch(login_check_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+            let response = await fetch(login_check_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
             if (response.status>=400&&response.status<500) {
                 await e.reply("检查Cookie状态失败")
                 return false;
@@ -441,7 +476,7 @@ export class example extends plugin {
                 e.reply('Cookie状态正常，无需刷新');
                 return true;
             } else {
-                e.reply('Cookie失效，将重新获取Cookie');
+                e.reply('Cookie失效，请重新扫码登陆');
                 return false;
             }
         }
@@ -484,7 +519,7 @@ export class example extends plugin {
                     csrf: csrf,
                     refresh_token: refresh_token
                 }
-                let response = await fetch(refresh_confirm_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+                let response = await fetch(refresh_confirm_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
                 let confirm_result = response.json();
                 if (confirm_result.code === 0) {
                     return true;
@@ -501,12 +536,25 @@ export class example extends plugin {
               source: 'main_web',
               refresh_token: ac_time_value
             });
-            let response = await fetch(refresh_cookie_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
+            let response = await fetch(refresh_cookie_url, { "headers": {'Content-Type': 'application/x-www-form-urlencoded', "cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "POST", "body": data.toString() });
             let refresh_result = response.json();
             if (refresh_result.code === 0) {
                 const last_ac_time_value = ac_time_value;
                 ac_time_value = refresh_result.data.refresh_token;
-                e.write_ac_time_value({ "msg": refresh_token });
+                
+                async function write_ac_time_value(ac_time_value) {
+                    fs.writeFile(dirpath + "/" + ac_time_value_filename, ac_time_value, 'utf8', async function(err) {
+                        if (err) {
+                            console.error(err);
+                            await e.reply('ac_time_value 保存失败');
+                            return;
+                        }
+                        console.log('ac_time_value 已成功保存到文件:', ac_time_value_filename);
+                        await e.reply('ac_time_value 已保存：' + ac_time_value);
+                    });
+                }
+                
+                await write_ac_time_value(ac_time_value);
                 const setCookieHeaders = response.headers.getAll('set-cookie') || [];
                 // 解析并提取 SESSDATA 和 bili_jct 的值
                 cookie = "";
@@ -516,10 +564,23 @@ export class example extends plugin {
                     if (match) {
                         const [pair] = match;
                         const [key, value] = pair.split('=');
-                        cookie += `"${key}": "${value}"`;
+                        cookie += `${key}=${value} `;
                     }
                 });
-                e.write_cookies({ "msg": cookie });
+                
+                async function write_cookies(cookie) {
+                    fs.writeFile(dirpath + "/" + cookie_filename, cookie, 'utf8', async function(err) {
+                        if (err) {
+                            console.error(err);
+                            await e.reply('Cookie 保存失败');
+                            return;
+                        }
+                        console.log('Cookie 已成功保存到文件:', cookie_filename);
+                        await e.reply('Cookie 已保存：' + cookie);
+                    });
+                }
+    
+                await write_cookies(cookie);
                 biliJct = await getCookieValue(cookie, 'bili_jct');
                 if(await refresh_confirm(biliJct, last_ac_time_value)) {
                     e.reply("Cookie刷新成功");
@@ -536,13 +597,13 @@ export class example extends plugin {
         
         if (await check_cookie()) {
             return true;
-        }
+        } 
         
         const full_refresh_csrf_url = refresh_csrf_url + await createCorrespondPath();
-        let response = await fetch(full_refresh_csrf_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+        let response = await fetch(full_refresh_csrf_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
         let refresh_result = await response.text();
         const regex = /<div\s+id=["']1-name["']>(.*?)<\/div>/is; // i 表示不区分大小写，s 表示点匹配换行
-        const match = htmlString.match(regex);
+        const match = refresh_result.match(regex);
         let refresh_csrf;
         if (match) {
           refresh_csrf = match[1]; // 提取第一个捕获组的内容
@@ -550,12 +611,139 @@ export class example extends plugin {
         
         await refresh_cookie(refresh_csrf);
         return true;
+        
+    }
+    
+    async scan_login(e) {
+        if (!e.isMaster) {
+            await e.reply('查成分只允许主人扫码登陆');
+            return false;
+        }
+        if (e.isGroup) {
+            await e.reply('查成分只允许主人私聊扫码登陆');
+            return false;
+        }
+        async function generate_qr() {
+            let response = await fetch(generate_qr_url, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
+            if (response.status>=400&&response.status<500) {
+                await e.reply("请求二维码失败")
+                return false;
+            }
+            let generate_result = await response.json();
+            if(generate_result.code === 0) {
+                return [generate_result.data.url, generate_result.data.qrcode_key];
+            } else {
+                e.reply('请求二维码失败，错误码：'+generate_result.code);
+                return false;
+            }
+        }
+        
+        async function trans_send_qr(url) {
+            try {
+                // 生成二维码到文件
+                await QRCode.toFile(dirpath + '/qrcode.png', url);
+                await e.reply("本二维码是作查成分插件获取cookie之用，请勿扫描您不信任的二维码，否则后果自负");
+                await e.reply(segment.image(dirpath + '/qrcode.png'));
+                return true;
+                // 或返回 Base64 字符串
+                // const base64QR = await QRCode.toDataURL(url);
+                // return { filePath: './qrcode.png', base64QR };
+        
+            } catch (err) {
+                e.reply('从'+url+'生成二维码失败:', err);
+                return false;
+            }
+        }
+        
+        async function wait_login(qrcode_key) {
+            let wait_result, response;
+            function wait(ms) {
+              return new Promise(resolve => setTimeout(resolve, ms));
+            }
+            while (true) {
+                response = await fetch(check_qr_url+qrcode_key, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
+                if (response.status>=400&&response.status<500) {
+                    await e.reply("检查扫码状态失败")
+                    return false;
+                }
+                let wait_result = await response.json();
+                if(wait_result.data.code === 86101 || wait_result.data.code === 86090) {
+                    continue;
+                } else if (wait_result.data.code === 86038) {
+                    e.reply('查成分扫码登陆二维码已失效，请重新获取');
+                    return false;
+                } else if(wait_result.data.code === 0) {
+                    e.reply('查成分登陆成功');
+                    ac_time_value = wait_result.data.refresh_token;
+                    
+                    async function write_ac_time_value(ac_time_value) {
+                        fs.writeFile(dirpath + "/" + ac_time_value_filename, ac_time_value, 'utf8', async function(err) {
+                            if (err) {
+                                console.error(err);
+                                await e.reply('ac_time_value 保存失败');
+                                return;
+                            }
+                            console.log('ac_time_value 已成功保存到文件:', ac_time_value_filename);
+                            await e.reply('ac_time_value 已保存：' + ac_time_value);
+                        });
+                    }
+                    
+                    await write_ac_time_value(ac_time_value);
+                    
+                    const setCookieHeaders = response.headers.getAll('set-cookie') || [];
+                    // 解析并提取 SESSDATA 和 bili_jct 的值
+                    cookie = "";
+                    setCookieHeaders.forEach(cookieString => {
+                        // 提取键值对（示例使用正则表达式）
+                        const match = cookieString.match(/^(.*?);/); // 提取键值对部分（忽略其他参数）
+                        if (match) {
+                            const [pair] = match;
+                            const [key, value] = pair.split('=');
+                            cookie += `${key}=${value} `;
+                        }
+                    });
+                    
+        
+                    async function write_cookies(cookie) {
+                        fs.writeFile(dirpath + "/" + cookie_filename, cookie, 'utf8', async function(err) {
+                            if (err) {
+                                console.error(err);
+                                await e.reply('Cookie 保存失败');
+                                return;
+                            }
+                            console.log('Cookie 已成功保存到文件:', cookie_filename);
+                            await e.reply('Cookie 已保存：' + cookie);
+                        });
+                    }
+        
+                    await write_cookies(cookie);
+                    return true;
+                }
+                
+                await wait(1000);
+            }
+        }
+        
+        let generate_qr_data = await generate_qr();
+        if(!generate_qr_data) {
+            return false;
+        }
+        let [qr_url, qrcode_key] = generate_qr_data;
+        if(await trans_send_qr(qr_url)) {
+            if (await wait_login(qrcode_key)) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
     }
     
     async name2uid(name) {
         //https://api.bilibili.com/x/web-interface/wbi/search/type?page=1&page_size=36&platform=pc&keyword=%E8%8B%A6%E6%80%95creep-II&search_type=bili_user
         try {
-            var response = await fetch((search_url+name), { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"}, "method": "GET" });
+            var response = await fetch((search_url+name), { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"}, "method": "GET" });
         } catch (e) {
             this.reply("name2uid请求发生异常:" + e + "，可能是Cookie失效导致")
             console.log("name2uid请求发生异常:" + e)
@@ -644,7 +832,7 @@ export class example extends plugin {
         var attention_list = [];
         var response;
         while (true){
-            response = await fetch(attention_url+`${mid}&pn=${page}`, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET", });
+            response = await fetch(attention_url+`${mid}&pn=${page}`, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET", });
             if (response.status>=400&&response.status<500) {
                 await this.reply("404，可能是uid不存在")
                 return [0,[]];
@@ -666,7 +854,7 @@ export class example extends plugin {
     
     async get_archive(mid) {
         let resJson;
-        var response = await fetch(archive_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET" });
+        var response = await fetch(archive_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET" });
         if (response.status>=400&&response.status<500) {
             await this.reply("404，可能是uid不存在")
             return false;
@@ -681,7 +869,7 @@ export class example extends plugin {
     }
     
     async get_medal_list(mid) {
-        var response = await fetch(medal_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Reference": "https://www.bilibili.com"},  "method": "GET" });
+        var response = await fetch(medal_url+mid, { "headers": {"cookie": cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0", "Referer": "https://www.bilibili.com"},  "method": "GET" });
         if (response.status==404) {
             await this.reply("404，可能是uid不存在")
             return false
@@ -846,6 +1034,6 @@ export class example extends plugin {
     return forwardMsg
   }
   async chengfen_help(e){
-      await this.reply("查成分帮助\n1.发送 #更新v列表 更新主播列表到本地，建议每周至少更新一次\n2.使用 #查成分 目标uid或者昵称全称 获取目标的成分，包括关注的V/游戏官号以及对应的粉丝牌\n3.使用 #查成分记录ck 保存b站Cookie，使用 #查成分查看ck 查看保存的ck；使用 #查成分记录ac 保存b站ac_time_value，使用 #查成分查看ac 查看保存的ac_time_value")
+      await this.reply("查成分帮助\n1.发送 #更新v列表 更新主播列表到本地，建议每周至少更新一次\n2.使用 #查成分 目标uid或者昵称全称 获取目标的成分，包括关注的V/游戏官号以及对应的粉丝牌\n3.使用 #查成分登录 来通过哔哩哔哩APP扫描获取cookie；若不能扫描或扫码登陆失败，可使用 #查成分记录ck 保存b站Cookie，并使用 #查成分记录ac 保存b站ac_time_value；要查看你的设置，使用 #查成分查看ck 查看保存的ck，使用 #查成分查看ac 查看保存的ac_time_value，你也可以通过 #查成分检查ck 检查cookie有效性")
   }
 }
