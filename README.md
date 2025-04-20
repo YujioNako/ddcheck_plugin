@@ -8,12 +8,6 @@
 VTB列表数据来源：[vtbs.moe](https://vtbs.moe/)
 
 ## 用户使用指南
-**安装必要依赖**
-
-在yunzai根目录运行以下bash来安装二维码及公钥相关依赖
-```
-pnpm add qrcode crypto
-```
 
 **更新列表**
 
@@ -43,7 +37,14 @@ pnpm add qrcode crypto
 
 直接将`查成分.js`放置到`/plugin/example`即可，文件名可修改
 
-初次部署时，请注意控制台载入信息是否正常，若出现类似“XXX is not defined”的报错，请确认是否安装好对应的依赖
+初次部署时，下面两个依赖是需要优先安装好的
+
+在yunzai根目录运行以下bash来安装二维码及公钥相关依赖
+```
+pnpm add qrcode crypto
+```
+
+安装上述依赖后仍然请注意控制台载入信息是否正常，若出现类似“XXX is not defined”的报错，请确认是否安装好对应的依赖
 
 ### 配置
 请使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则该插件无法使用；进一步的，您可以使用`#查成分记录ac 您的ac_time_value`来配置或更新您的b站账号的ac_time_value，这样做可以让插件得以自动化更新cookie
