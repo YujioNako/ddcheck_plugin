@@ -9,6 +9,7 @@ VTB列表数据来源：[vtbs.moe](https://vtbs.moe/)
 
 ## 用户使用指南
 **安装必要依赖**
+
 在yunzai根目录运行以下bash来安装二维码及公钥相关依赖
 ```
 pnpm add qrcode crypto
