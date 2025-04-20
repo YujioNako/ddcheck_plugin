@@ -47,7 +47,9 @@ pnpm add qrcode crypto
 安装上述依赖后仍然请注意控制台载入信息是否正常，若出现类似“XXX is not defined”的报错，请确认是否安装好对应的依赖
 
 ### 配置
-请使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则该插件无法使用；进一步的，您可以使用`#查成分记录ac 您的ac_time_value`来配置或更新您的b站账号的ac_time_value，这样做可以让插件得以自动化更新cookie
+请优先使用命令`#查成分登陆`来用哔哩哔哩APP扫码登陆自动获取cookie
+
+若扫码登陆失败，也可以使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则该插件无法使用；进一步的，您可以使用`#查成分记录ac 您的ac_time_value`来配置或更新您的b站账号的ac_time_value，这样做可以让插件得以自动化更新cookie（该功能正在研究中，尚不能正常运作）
 
 > `cookie` 获取方式：<br>
 > 登录bilibili后，`F12` 打开开发工具，查看 `www.bilibili.com` 的请求头下的`cookie`内，形如`SESSDATA=XXXX;bili_jct=XXXX;`的字段，即为您的b站cookie <br>
