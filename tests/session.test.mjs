@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {BiliSession,atomicWrite,cookies,mergeCookies,setCookieLines,correspondPath} from '../lib/bili-session.mjs';
+import {BiliSession,atomicWrite,cookies,mergeCookies,setCookieLines,correspondPath} from './session-core.mjs';
 const OLD='SESSDATA=old==; bili_jct=old-csrf; DedeUserID=123; buvid3=keep';
 const TOKEN='old+token&value';
 const LINES=['SESSDATA=new==; Path=/; Secure','bili_jct=new-csrf; Path=/','DedeUserID=123; Path=/'];

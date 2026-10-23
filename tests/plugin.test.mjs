@@ -22,7 +22,7 @@ test('plugin integration: private-owner gates, quiet startup, one schedule, safe
  try{
   let source=fs.readFileSync(path.join(here,'../查成分.js'),'utf8');
   source=source.replace(/^import .*$/gm,'');
-  source=`import fs from 'node:fs';import {BiliSession} from ${JSON.stringify(pathToFileURL(path.join(here,'../lib/bili-session.mjs')).href)};const {plugin,segment,fetch,schedule,cfg,lodash,common,QRCode}=globalThis.__ddtest;\n`+source;
+  source=`import fs from 'node:fs';import path from 'node:path';import {publicEncrypt,createPublicKey,constants,randomBytes} from 'node:crypto';const {plugin,segment,fetch,schedule,cfg,lodash,common,QRCode}=globalThis.__ddtest;\n`+source;
   source=source.replace('setTimeout(resolve,3000)','setTimeout(resolve,1)');
   const file=path.join(dir,'plugin-test.mjs');fs.writeFileSync(file,source);process.chdir(dir);fs.mkdirSync('data');
   const {example}=await import(pathToFileURL(file));const p=new example();

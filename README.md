@@ -37,17 +37,15 @@ VTB列表数据来源：[vtbs.moe](https://vtbs.moe/)
 
 需要 Node.js 20 或以上版本。本版在 Miao-Yunzai / Node.js 20 环境验证。
 
-将以下两个文件放到对应位置，保留相对目录结构：
+只需将 `查成分.js` 复制到 Yunzai 的 `plugins/example/` 目录，无需安装本仓库的其他文件。Cookie 自动续期模块已内嵌在主文件中。
 
 ```text
 Miao-Yunzai/
 └── plugins/example/
-    ├── 查成分.js
-    └── lib/
-        └── bili-session.mjs
+    └── 查成分.js
 ```
 
-**从旧版升级时，必须同时复制 `查成分.js` 和 `lib/bili-session.mjs`，不能只替换主文件。** 原有 `data/cha_chengfen/` 中的列表、Cookie 和刷新令牌继续使用，不要删除。
+从上一版升级时，替换主文件并确认加载成功后，可以删除旧的 `plugins/example/lib/bili-session.mjs`；`lib` 目录只有在为空时才能删除。保留原有 `data/cha_chengfen/`，其中的列表、Cookie 和刷新令牌继续使用。
 
 在 Yunzai 根目录安装二维码依赖（已安装则无需重复）：
 
@@ -55,7 +53,7 @@ Miao-Yunzai/
 pnpm add qrcode
 ```
 
-加密使用 Node.js 内置的 `node:crypto`，无需安装名为 `crypto` 的 npm 包。其余依赖由现有 Yunzai 环境提供。复制完成后检查控制台是否出现“会话自动续期模块 v1 已加载”；支持热更新的框架无需重启。
+加密使用 Node.js 内置的 `node:crypto`，无需安装名为 `crypto` 的 npm 包。其余依赖由现有 Yunzai 环境提供。复制完成后检查控制台是否出现“单文件会话自动续期模块 v1 已加载”；支持热更新的框架无需重启。
 
 ### 登录与配置
 
