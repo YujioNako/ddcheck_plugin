@@ -1,0 +1,10 @@
+node_modules/
+data/
+bilibili_cookies.txt
+ac_time_value.txt
+.session-pending.json
+.session-refresh.lock/
+qrcode.png
+*.backup
+*.bak
+*.tmp-*

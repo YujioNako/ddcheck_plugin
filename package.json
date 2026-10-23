@@ -1,0 +1,9 @@
+{
+  "name": "ddcheck-plugin",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/session.test.mjs tests/plugin.test.mjs"
+  }
+}

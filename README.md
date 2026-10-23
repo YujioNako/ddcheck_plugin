@@ -35,44 +35,65 @@ VTB列表数据来源：[vtbs.moe](https://vtbs.moe/)
 ## 管理员使用指南
 ### 部署到云崽
 
-直接将`查成分.js`放置到`/plugin/example`即可，文件名可修改
+需要 Node.js 20 或以上版本。本版在 Miao-Yunzai / Node.js 20 环境验证。
 
-初次部署时，下面两个依赖是需要优先安装好的
+将以下两个文件放到对应位置，保留相对目录结构：
 
-在yunzai根目录运行以下bash来安装二维码及公钥相关依赖
-```
-pnpm add qrcode crypto
-```
-
-安装上述依赖后仍然请注意控制台载入信息是否正常，若出现类似“XXX is not defined”的报错，请确认是否安装好对应的依赖
-
-### 配置
-请优先使用命令`#查成分登陆`来用哔哩哔哩APP扫码登陆自动获取cookie
-
-若扫码登陆失败，也可以使用命令`#查成分记录ck 您的cookie`来配置或更新您的b站账号的cookie，否则该插件无法使用；进一步的，您可以使用`#查成分记录ac 您的ac_time_value`来配置或更新您的b站账号的ac_time_value，这样做可以让插件得以自动化更新cookie（该功能正在研究中，尚不能正常运作）
-
-> `cookie` 获取方式：<br>
-> 登录bilibili后，`F12` 打开开发工具，查看 `www.bilibili.com` 的请求头下的`cookie`内，形如`SESSDATA=XXXX;bili_jct=XXXX;`的字段，即为您的b站cookie <br>
-
-理论上，使用粉丝牌查询只需要`SESSDATA`，使用昵称转uid同时需要`bili_jct`以及`SESSDATA`；如果您不是很了解cookie的结构、用法、用途，请直接将cookie字段下的所有内容贴入
-
-`SESSDATA`与`bili_jct`可能需要经常更新，当cookie失效后，查成分时会出现提示；若您还设置了ac_time_value，您可尝试使用`#查成分更新ck`来自动化更新cookie
-
-<b><h3>注意：不要将包含`SESSDATA`或`bili_jct`在内的cookie透露给任何人，这些字段包含了您的Bilibili登录令牌，其泄露可能给您的账号带来风险</h3></b>
-
-> `ac_time_value`获取方式：<br>
-> 在控制台中输入下面的JavaScript：
-```
-const acTimeValue = localStorage.getItem('ac_time_value');
-
-if (acTimeValue !== null) {
-  console.log('ac_time_value 的值是:', acTimeValue);
-} else {
-  console.log('未找到名为 "ac_time_value" 的存储项');
-}
+```text
+Miao-Yunzai/
+└── plugins/example/
+    ├── 查成分.js
+    └── lib/
+        └── bili-session.mjs
 ```
 
-您还可以根据需要在js内配置是否开启自动更新列表，自动更新的时间，是否切割发送等设置，具体调整方式请参考js内注释
+**从旧版升级时，必须同时复制 `查成分.js` 和 `lib/bili-session.mjs`，不能只替换主文件。** 原有 `data/cha_chengfen/` 中的列表、Cookie 和刷新令牌继续使用，不要删除。
+
+在 Yunzai 根目录安装二维码依赖（已安装则无需重复）：
+
+```bash
+pnpm add qrcode
+```
+
+加密使用 Node.js 内置的 `node:crypto`，无需安装名为 `crypto` 的 npm 包。其余依赖由现有 Yunzai 环境提供。复制完成后检查控制台是否出现“会话自动续期模块 v1 已加载”；支持热更新的框架无需重启。
+
+### 登录与配置
+
+**以下登录和凭据管理命令仅限主人私聊使用。** 推荐发送 `#查成分登录`，使用哔哩哔哩 APP 扫码，插件会成对保存 Cookie 和 `ac_time_value`。
+
+| 命令 | 功能 |
+| --- | --- |
+| `#查成分登录` | 扫码登录并保存配套凭据，也支持“登陆”“扫码登录” |
+| `#查成分检查ck` | 立即检查，并在 B 站要求时刷新 |
+| `#查成分刷新ck` / `#查成分更新ck` | 与检查命令相同，不强制轮换仍无需刷新的凭据 |
+| `#查成分记录ck Cookie内容` | 手动保存 Cookie；更换登录会话时清空原刷新令牌，防止混用 |
+| `#查成分记录ac ac_time_value内容` | 保存与当前 Cookie 配套的刷新令牌 |
+| `#查成分查看ck` / `#查成分查看ac` | 查看是否已配置，不回显凭据内容 |
+
+手动配置时，在已登录的 B 站网页开发者工具中读取 `www.bilibili.com` 请求的 Cookie，以及该站点 Local Storage 中的 `ac_time_value`。自动续期需要同一登录会话的 `SESSDATA`、`bili_jct` 和 `ac_time_value`；仅提供 `SESSDATA` 不能保证自动刷新正常。优先使用扫码登录，避免配错。
+
+### 自动续期
+
+- 自动检查默认开启，每小时巡检；正常状态下最多每 6 小时请求一次状态接口。查询成分前也会静默检查，手动命令可立即检查。
+- 根据 B 站返回的 `data.refresh` 决定是否刷新，而非只判断 `code: 0`。获取刷新 CSRF 后，以旧令牌换取新 Cookie 和新令牌，持久化后再使用新 Cookie 确认废弃旧令牌。
+- 同时发生的检查共用一个刷新任务；跨进程文件锁避免重复轮换。网络失败不会清空原凭据，失败检查有 15 分钟冷却，定时巡检或后续查询会重试。
+- 更新过程使用恢复记录。若保存中断或确认失败，下次检查会先恢复保存或补做确认，不会直接丢弃已经取得的新凭据。
+- 扫码等待每 3 秒查询一次，最长等待 3 分钟；成功回复只说明保存结果，不回显 Cookie 或令牌。日志也不会输出这些凭据。
+- 若账号被强制下线，或刷新令牌失效、不匹配，自动刷新可能被 B 站拒绝，此时请重新扫码登录。
+
+`bilibili_cookies.txt` 和 `ac_time_value.txt` 的路径不变，依赖这些文件的其他本地服务可以继续读取。不要公开 `data/cha_chengfen/`，其中的 Cookie、刷新令牌和更新恢复记录都是登录凭据。
+
+可在主文件顶部调整 `auto_check_cookie`、V 列表更新设置和消息切割阈值。Cookie 定时检查独立于 V 列表更新，不会因为列表接口故障而跳过。
+
+## 开发与测试
+
+在本仓库根目录运行，无需安装测试依赖：
+
+```bash
+npm test
+```
+
+测试使用 Node.js 内置测试框架、临时目录和模拟接口，不访问真实 B 站账号，也不会连接 QQ 或发送消息。覆盖刷新协议、Cookie 解析、并发、失败保留、保存中断恢复、扫码保存及主人私聊权限。
 
 ## 示例
 <div align="left">
